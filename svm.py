@@ -23,11 +23,17 @@ from data import getTrainNum, getTestNum
 
 x, y = getTrainNum()
 x_test = getTestNum()
+x_val = x[-50:]
+x = x[:-50]
+y_val = y[-50:]
+y = y[:-50]
 test_data = pd.read_csv('C:\\Users\\Danie\\Desktop\\work\\kaggle\\titanic\\test.csv')
 
 model = SVC()
 model.fit(x, y)
 joblib.dump(model, 'C:\\Users\\Danie\\Desktop\\work\\kaggle\\titanic\\svm_search.pkl')
+
+print(np.mean(model.predict(x_val) != y_val))
 
 predictions = model.predict(x_test)
 output = pd.DataFrame({'PassengerId': test_data.PassengerId, 'Survived': predictions})

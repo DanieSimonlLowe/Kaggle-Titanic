@@ -26,9 +26,9 @@ from data import getTrainNum, getTestNum
 
 x, y = getTrainNum()
 x_val = x[-50:]
-x = x[:-50]
+#x = x[:-50]
 y_val = y[-50:]
-y = y[:-50]
+#y = y[:-50]
 x_test = getTestNum()
 test_data = pd.read_csv('C:\\Users\\Danie\\Desktop\\work\\kaggle\\titanic\\test.csv')
 
@@ -38,17 +38,17 @@ params = {
     'hidden_layer_3': Integer(0, 30),  # Size of the third hidden layer
     'hidden_layer_4': Integer(0, 30),  # Size of the third hidden layer
     'activation': ['tanh', 'relu', 'elu', 'sigmoid'],
-    'alpha': (0, 0.1, 'log-uniform'),
-    'l1': (0,0.1, 'log-uniform'),
+    'alpha': (1e-10, 0.1, 'log-uniform'),
+    'l1': (1e-10,0.1, 'log-uniform'),
     'learning_rate_init': (0.00001,0.1, 'log-uniform'),
     'dropout_rate': (0,0.35, 'log-uniform'),
     'sort_layers': [False, True],
 }
 
 class CustomMLPClassifier(BaseEstimator, ClassifierMixin):
-    def __init__(self, hidden_layer_1=10, hidden_layer_2=0, hidden_layer_3=0, hidden_layer_4=0, 
-                 activation='relu', alpha=0, learning_rate_init=0.001, sort_layers=True, l1=0,
-                 dropout_rate=0.1):
+    def __init__(self, hidden_layer_1=10, hidden_layer_2=12, hidden_layer_3=12, hidden_layer_4=10, 
+                 activation='relu', alpha=0.5, learning_rate_init=0.001, sort_layers=False, l1=0.01,
+                 dropout_rate=0.2, input_size=10, **kwards):
         # Build the tuple of hidden_layer_sizes dynamically
         self.hidden_layer_1 = hidden_layer_1
         self.hidden_layer_2 = hidden_layer_2
@@ -60,13 +60,15 @@ class CustomMLPClassifier(BaseEstimator, ClassifierMixin):
         self.dropout_rate = dropout_rate
         self.l1 = l1
         self.sort_layers = sort_layers
+        self.input_size = input_size
+        
         self._create_model()
     
     def _create_model(self):
         # Build the tuple of hidden_layer_sizes dynamically
         layers = []
         hidden_layers = [self.hidden_layer_1, self.hidden_layer_2, self.hidden_layer_3, self.hidden_layer_4]
-        input_size = 10
+        input_size = self.input_size
         if (self.sort_layers):
             hidden_layers.sort(reverse=True)
         for size in hidden_layers:
@@ -92,26 +94,51 @@ class CustomMLPClassifier(BaseEstimator, ClassifierMixin):
                 nn.init.xavier_uniform_(layer.weight)
                 nn.init.zeros_(layer.bias)
 
-    def fit(self, X, y):
-        X_tensor = torch.tensor(X.values, dtype=torch.float32)
-        y_tensor = torch.tensor(y.values, dtype=torch.float32)
-        criterion = nn.BCELoss()  # Binary Cross Entropy Loss
+    def fit(self, X, y, sample_weight=None):
+        if isinstance(X, np.ndarray):
+            X_tensor = torch.tensor(X, dtype=torch.float32)
+            y_tensor = torch.tensor(y, dtype=torch.float32)
+        else:
+            X_tensor = torch.tensor(X.values, dtype=torch.float32)
+            y_tensor = torch.tensor(y.values, dtype=torch.float32)
+        criterion = nn.BCELoss(reduction='none')  # Binary Cross Entropy Loss
         #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
         optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate_init, weight_decay=self.alpha)
+        
+        best_loss = float('inf')
+        epochs_no_improve = 0
+
         for _ in range(200):  # Example epochs, adjust as needed
             optimizer.zero_grad()
             outputs = self.model(X_tensor).squeeze()
             loss = criterion(outputs, y_tensor)
+            if sample_weight is not None:
+                # Multiply each loss by the corresponding sample weight
+                loss = loss * torch.tensor(sample_weight, dtype=torch.float32)
+
             l1_penalty = sum(p.abs().sum() for p in self.model.parameters()) * self.l1
-            loss += l1_penalty
+            loss = loss.sum() + l1_penalty
             loss.backward()
             optimizer.step()
+
+            if loss <= best_loss * 1.05:
+                best_loss = loss
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+            
+            if epochs_no_improve >= 5:
+                break
+
+
         return self
 
     def predict(self, X):
         self.model.eval()
         if torch.is_tensor(X):
             X_tensor = X
+        elif isinstance(X, np.ndarray):
+            X_tensor = torch.tensor(X, dtype=torch.float32)
         else:
             X_tensor = torch.tensor(X.values, dtype=torch.float32)
         with torch.no_grad():
@@ -137,6 +164,7 @@ class CustomMLPClassifier(BaseEstimator, ClassifierMixin):
             'dropout_rate':self.dropout_rate,
             'sort_layers': self.sort_layers,
             'l1': self.l1,
+            'input_size': self.input_size,
         }
     
     def set_params(self, **params):
@@ -145,16 +173,16 @@ class CustomMLPClassifier(BaseEstimator, ClassifierMixin):
         self._create_model()
         return self
 
+if __name__ == '__main__':
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=1, random_state=1)
+    #model = BayesSearchCV(estimator=CustomMLPClassifier(), search_spaces=params, n_jobs=-1, cv=cv, n_iter=50, verbose=3)
+    model = CustomMLPClassifier()
+    model.fit(x, y)
+    #joblib.dump(model, 'C:\\Users\\Danie\\Desktop\\work\\kaggle\\titanic\\network_bayes_search.pkl')
+    # 0.08
+    print(model.score(x_val,y_val))
 
-cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=1, random_state=1)
-model = BayesSearchCV(estimator=CustomMLPClassifier(), search_spaces=params, n_jobs=-1, cv=cv, n_iter=50, verbose=3)
-model.fit(x, y)
-print("Best parameters found:", model.best_params_)
-joblib.dump(model, 'C:\\Users\\Danie\\Desktop\\work\\kaggle\\titanic\\network_bayes_search.pkl')
-# 0.08
-print(np.mean(model.predict(x_val) != y_val))
-
-predictions = model.predict(x_test)
-output = pd.DataFrame({'PassengerId': test_data.PassengerId, 'Survived': predictions})
-output.to_csv('C:\\Users\\Danie\\Desktop\\work\\kaggle\\titanic\\submission.csv', index=False)
-print("Your submission was successfully saved!")
+    predictions = model.predict(x_test)
+    output = pd.DataFrame({'PassengerId': test_data.PassengerId, 'Survived': predictions})
+    output.to_csv('C:\\Users\\Danie\\Desktop\\work\\kaggle\\titanic\\submission.csv', index=False)
+    print("Your submission was successfully saved!")

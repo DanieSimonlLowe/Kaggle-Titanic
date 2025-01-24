@@ -35,12 +35,13 @@ params = {
     'learning_rate': (1e-6,1000, 'log-uniform'),
 }
 
-cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=1)
-model = BayesSearchCV(estimator=AdaBoostClassifier(), search_spaces=params, n_jobs=-1, cv=cv, n_iter=200, verbose=3)
+cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=1, random_state=1)
+model = BayesSearchCV(estimator=AdaBoostClassifier(), search_spaces=params, n_jobs=-1, cv=cv, n_iter=50, verbose=3)
 model.fit(x, y)
 joblib.dump(model, 'C:\\Users\\Danie\\Desktop\\work\\kaggle\\titanic\\boosted_search.pkl')
 
 # this is worse then svc normal
+# 0.14
 print(np.mean(model.predict(x_val) != y_val))
 
 predictions = model.predict(x_test)
